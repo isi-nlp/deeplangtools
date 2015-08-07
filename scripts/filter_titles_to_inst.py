@@ -40,23 +40,30 @@ def main():
   for line in tdfile:
     targetdict.add(line.strip())
 
+  identities = 0
+  oov = 0
+  mword = 0
   for line in infile:
     src, trg = line.lstrip().rstrip().split(" ||| ")
     src = src.split()
     trg = trg.split()
     # singletons only
     if len(src) != 1 or len(trg) != 1:
+      mword+=1
       continue
-    src = src[0]
-    trg = trg[0]
+    src = src[0].lower()
+    trg = trg[0].lower()
     # no identities
     if src == trg:
+      identities+=1
       continue
     # no oov
     if src not in sourcedict or trg not in targetdict:
+      oov+=1
       continue
     # OTHER HEURISTICS...
     outfile.write("%s %s %s %s\n" % (src, args.sourcelang, args.targetlang, trg))
+  sys.stderr.write("%d ident %d oov %d mword\n" % (identities, oov, mword))
 if __name__ == '__main__':
   main()
 
