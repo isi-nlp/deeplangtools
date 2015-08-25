@@ -13,11 +13,16 @@ from nearpy.hashes import RandomBinaryProjections
 from nearpy.filters import NearestFilter
 from nearpy.distances import CosineDistance
 from scipy.spatial.distance import cosine
+from scipy.spatial import cKDTree as kdt
+from sklearn.preprocessing import normalize
+from lshash import LSHash
+
+import heapq
 
 scriptdir = os.path.dirname(os.path.abspath(__file__))
 
 def main():
-  parser = argparse.ArgumentParser(description="Evaluate the 1 matrix no interlingus embedding experiment",
+  parser = argparse.ArgumentParser(description="Evaluate the 2 matrix embedding experiment",
                                    formatter_class=argparse.ArgumentDefaultsHelpFormatter)
   parser.add_argument("--sourcedictionary", "-S", type=argparse.FileType('r'),  help="source vocabulary dictionary of the form lang word vec; headed by row col")
   parser.add_argument("--targetdictionary", "-T", type=argparse.FileType('r'),  help="target vocabulary dictionary of the form lang word vec; headed by row col")
@@ -27,6 +32,7 @@ def main():
   parser.add_argument("--modelfile", "-m", nargs='?', type=argparse.FileType('r'), default=sys.stdin, help="all models input file")
   parser.add_argument("--outfile", "-o", nargs='?', type=argparse.FileType('w'), default=sys.stdout, help="results file of the form word1 lang1 lang2 word2 [pos wordlist], where the first three fields are identical to eval and the last field is the 1-best prediction. If truth is known, ordinal position of correct answer (-1 if not found) followed by the n-best list in order")
   parser.add_argument("--nbest", "-n", type=int, default=10, help="nbest neighbors generated for purposes of evaluation")
+  parser.add_argument("--doSlow", action='store_true', default=False, help="slow n^2 calculation of nearest neighbors")
 
 
   try:
@@ -49,8 +55,10 @@ def main():
   print sourcedim,targetdim
 
 
-  mat = np.matrix(np.load(args.modelfile)['arr_0'])
-  print mat.shape
+  smat = np.matrix(np.load(args.modelfile)['s'])
+  tmat = np.matrix(np.load(args.modelfile)['t'])
+  print smat.shape
+  print tmat.shape
   # make nn indices for each language
   # Create a random binary hash
   rbp = RandomBinaryProjections('rbp', args.bits)
@@ -61,6 +69,9 @@ def main():
   # TODO: would be cool if this could exist on-disk in some binary format so only the instructions need be passed in
   # Kludgy: store source and target in different structures
   vocab = dd(lambda: dict())
+  targets = []
+  targetvoc = []
+  lshes = LSHash(20, targetdim)
   for istarget, fdim, dfile in zip((False, True), (sourcedim, targetdim), (sourcedictionary, targetdictionary)):
     try:
       for ln, line in enumerate(dfile):
@@ -74,8 +85,9 @@ def main():
         vocab[lang][word]=vec
         if istarget:
           engine.store_vector(vec, word)
-
-
+          targets.append(vec)
+          targetvoc.append(word)
+          lshes.index(vec, extra_data=word)
     except:
       print dfile.name
       print line
@@ -83,7 +95,7 @@ def main():
       print word
       print ln
       raise
-
+  targets = kdt(normalize(np.array(targets), axis=1, norm='l2'))
   print "loaded vocabularies"
 
   for line in infile:
@@ -96,8 +108,29 @@ def main():
       sys.stderr.write("Warning: Couldn't find %s -> %s\n" % (inlang, inword))
       continue
     invec = np.matrix(vocab[inlang][inword])
-    xform = np.asarray(invec*mat)[0]
-    neighbors = engine.neighbours(xform)
+    xform = np.asarray(invec*smat*tmat)[0]
+    # TODO: n^2 or the other exact way to get nbest; engine seems broken
+    if args.doSlow:
+      neighbors = []
+
+#      lshresults = lshes.query(xform, num_results=args.nbest, distance_func="cosine")
+#      print lshresults
+#      for res in lshresults:
+#        neighbors.append((res[1], res[0][1]))
+      cosines, cands = targets.query(xform, args.nbest)
+
+      for cos, cand in zip(cosines, cands):
+        neighbors.append((cos, targetvoc[cand]))
+
+      # cmps = [] # make heap
+      # heapq.heapify(cmps)
+      # for word, tvec in vocab[outlang].iteritems():
+      #   heapq.heappush(cmps, (cosine(xform, tvec), word))
+      # neighbors = []
+      # for i in xrange(args.nbest):
+      #   neighbors.append(heapq.heappop(cmps))
+    else:
+      neighbors = engine.neighbours(xform)
     report = inst[:4]
     nb_words = [x[1] for x in neighbors]
     #cosines: xform to truth, xform to 1best, truth to 1best

@@ -12,14 +12,14 @@ from numpy import linalg as LA
 
 scriptdir = os.path.dirname(os.path.abspath(__file__))
 
-# TODO: auto-read dimensions in other scripts
-# TODO: reverse other dictionaries to be lang word vec
+# TODO: add clipping here!!
 
 def main():
-  parser = argparse.ArgumentParser(description="Do gradient descent for the 1 matrix interlingus embedding experiment",
+  parser = argparse.ArgumentParser(description="Do gradient descent for the 2 matrix interlingus embedding experiment",
                                    formatter_class=argparse.ArgumentDefaultsHelpFormatter)
   parser.add_argument("--sourcedictionary", "-S", type=argparse.FileType('r'),  help="source vocabulary dictionary of the form lang word vec; headed by row col")
   parser.add_argument("--targetdictionary", "-T", type=argparse.FileType('r'),  help="target vocabulary dictionary of the form lang word vec; headed by row col")
+  parser.add_argument("--idim", "-I", default=128, type=int, help="dimension of interlingus")
   parser.add_argument("--infile", "-i", type=argparse.FileType('r'), default=sys.stdin, help="training instruction of the form word1 lang1 lang2 word2")
   parser.add_argument("--devsize", "-s", type=int, default=0, help="How much dev data to sample; rest is training")
   parser.add_argument("--modelfile", "-f", nargs='?', type=argparse.FileType('w'), default=sys.stdout, help="all models output file")
@@ -29,7 +29,7 @@ def main():
   parser.add_argument("--period", "-p", type=int, default=10, help="How often to look at objective")
   parser.add_argument("--parammin",  default=-2, type=float, help="minimum model parameter value")
   parser.add_argument("--parammax",  default=2, type=float, help="maximum model parameter value")
-
+  parser.add_argument("--cliprate", "-c", default=1, type=float, help="magnitude at which to clip")
 
   try:
     args = parser.parse_args()
@@ -46,12 +46,14 @@ def main():
   targetinfo = map(int, targetdictionary.readline().strip().split())
   sourcedim = sourceinfo[1]
   targetdim = targetinfo[1]
+  interdim = args.idim
   print sourcedim,targetdim
   # make initial transformation matrix
 
   paramrange=args.parammax-args.parammin
 
-  mat = np.matrix((np.random.rand(sourcedim, targetdim)*paramrange)+args.parammin)
+  smat = np.matrix((np.random.rand(sourcedim, interdim)*paramrange)+args.parammin)
+  tmat = np.matrix((np.random.rand(targetdim, interdim)*paramrange)+args.parammin).transpose()
 
   # TODO: would be cool if this could exist on-disk in some binary format so only the instructions need be passed in
   vocab = dd(lambda: dict())
@@ -113,15 +115,26 @@ def main():
       rowend = rowstart+args.minibatch
       batch_in = data[rowstart:rowend, 2:sourcedim+2].astype(float)
       batch_out = data[rowstart:rowend, sourcedim+2:].astype(float)
-      im = batch_in*mat
-      twodel = 2*(im-batch_out)
-      update = batch_in.transpose()*twodel/args.minibatch
-      mat = mat-(update*args.learningrate)
+      im = batch_in*smat
+      imn = im*tmat
+      twodel = 2*(imn-batch_out)
+      tupdate = im.transpose()*twodel/args.minibatch
+      supdate = batch_in.transpose()*twodel*tmat.transpose()/args.minibatch
+      if args.cliprate > 0:
+        tunorm = LA.norm(tupdate, ord=2)
+        if tunorm > args.cliprate:
+          tupdate = args.cliprate*tupdate/tunorm
+        sunorm = LA.norm(supdate, ord=2)
+        if sunorm > args.cliprate:
+          supdate = args.cliprate*supdate/sunorm
+      smat = smat-(supdate*args.learningrate)
+      tmat = tmat-(tupdate*args.learningrate)
     if (iteration % args.period == 0): # report full training objective
       batch_in = devdata[:, 2:sourcedim+2].astype(float)
       batch_out = devdata[:, sourcedim+2:].astype(float)
-      im = batch_in*mat
-      delta = im-batch_out
+      im = batch_in*smat
+      imn = im*tmat
+      delta = imn-batch_out
       delnorm = LA.norm(delta, ord=2)
       l2n2 = delnorm*delnorm
       print "iteration "+str(iteration)+": "+str(l2n2) + " = " + str(im[:2,:10]) + " vs " + str(batch_out[:2,:10])
@@ -129,7 +142,8 @@ def main():
         print "Stopping early"
         break
       lastl2n2=l2n2
-  np.savez_compressed(args.modelfile, mat)
+  matsasdict = {'s':smat, 't':tmat}
+  np.savez_compressed(args.modelfile, **matsasdict)
 
 if __name__ == '__main__':
   main()
