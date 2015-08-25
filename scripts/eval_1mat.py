@@ -13,6 +13,9 @@ from nearpy.hashes import RandomBinaryProjections
 from nearpy.filters import NearestFilter
 from nearpy.distances import CosineDistance
 from scipy.spatial.distance import cosine
+from scipy.spatial import cKDTree as kdt
+from sklearn.preprocessing import normalize
+
 
 scriptdir = os.path.dirname(os.path.abspath(__file__))
 
@@ -51,11 +54,9 @@ def main():
 
   mat = np.matrix(np.load(args.modelfile)['arr_0'])
   print mat.shape
-  # make nn indices for each language
-  # Create a random binary hash
-  rbp = RandomBinaryProjections('rbp', args.bits)
-  # create engine for target language
-  engine = Engine(targetdim, lshashes=[rbp], distance=CosineDistance(), vector_filters=[NearestFilter(args.nbest)])
+
+  targets = []
+  targetvoc = []
   
   # load transformation matrices
   # TODO: would be cool if this could exist on-disk in some binary format so only the instructions need be passed in
@@ -73,8 +74,8 @@ def main():
         vec = np.array(entry[-fdim:]).astype(float)
         vocab[lang][word]=vec
         if istarget:
-          engine.store_vector(vec, word)
-
+          targets.append(vec)
+          targetvoc.append(word)
 
     except:
       print dfile.name
@@ -83,7 +84,7 @@ def main():
       print word
       print ln
       raise
-
+  targets = kdt(normalize(np.array(targets), axis=1, norm='l2'))
   print "loaded vocabularies"
 
   for line in infile:
@@ -97,7 +98,11 @@ def main():
       continue
     invec = np.matrix(vocab[inlang][inword])
     xform = np.asarray(invec*mat)[0]
-    neighbors = engine.neighbours(xform)
+    neighbors = []
+    cosines, cands = targets.query(xform, args.nbest)
+    for cos, cand in zip(cosines, cands):
+      neighbors.append((cos, targetvoc[cand]))
+
     report = inst[:4]
     nb_words = [x[1] for x in neighbors]
     #cosines: xform to truth, xform to 1best, truth to 1best
