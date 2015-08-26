@@ -11,7 +11,7 @@ from numpy import linalg as LA
 from scipy.spatial.distance import cosine
 from scipy.spatial import cKDTree as kdt
 from sklearn.preprocessing import normalize
-
+import cPickle
 import heapq
 
 scriptdir = os.path.dirname(os.path.abspath(__file__))
@@ -19,11 +19,8 @@ scriptdir = os.path.dirname(os.path.abspath(__file__))
 def main():
   parser = argparse.ArgumentParser(description="Evaluate the 2 matrix embedding experiment",
                                    formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-  parser.add_argument("--sourcedictionary", "-S", type=argparse.FileType('r'),  help="source vocabulary dictionary of the form lang word vec; headed by row col")
-  parser.add_argument("--targetdictionary", "-T", type=argparse.FileType('r'),  help="target vocabulary dictionary of the form lang word vec; headed by row col")
-  parser.add_argument("--pickle", "-p", action='store_true', default=False, help='set to true to assume -T is pickled data (faster loading)')
-  parser.add_argument("--bits", "-b", default=10, type=int, help="number of bits for hash projection. higher = more accurate knn (and slower)")
-
+  parser.add_argument("--sourcedictionary", "-S", type=argparse.FileType('r'),  help="source vocabulary dictionary of the form lang word vec; headed by row col; need only be relevant to the evaluation set")
+  parser.add_argument("--targetdictionary", "-T", type=argparse.FileType('r'),  help="target vocabulary dictionary (pickled)")
   parser.add_argument("--infile", "-i", type=argparse.FileType('r'), default=sys.stdin, help="evaluation instruction of the form word1 lang1 lang2 [word2]. If word2 is absent it is only predicted, not evaluated")
   parser.add_argument("--modelfile", "-m", nargs='?', type=argparse.FileType('r'), default=sys.stdin, help="all models input file")
   parser.add_argument("--outfile", "-o", nargs='?', type=argparse.FileType('w'), default=sys.stdout, help="results file of the form word1 lang1 lang2 word2 [pos wordlist], where the first three fields are identical to eval and the last field is the 1-best prediction. If truth is known, ordinal position of correct answer (-1 if not found) followed by the n-best list in order")
@@ -41,14 +38,9 @@ def main():
   infile = reader(args.infile)
   outfile = writer(args.outfile)
   sourcedictionary = reader(args.sourcedictionary)
-  targetdictionary = reader(args.targetdictionary)
-  
-  sourceinfo = map(int, sourcedictionary.readline().strip().split())
-  targetinfo = map(int, targetdictionary.readline().strip().split())
-  sourcedim = sourceinfo[1]
-  targetdim = targetinfo[1]
-  print sourcedim,targetdim
 
+  sourceinfo = map(int, sourcedictionary.readline().strip().split())
+  sourcedim = sourceinfo[1]
 
   smat = np.matrix(np.load(args.modelfile)['s'])
   tmat = np.matrix(np.load(args.modelfile)['t'])
@@ -60,31 +52,30 @@ def main():
   # Kludgy: store source and target in different structures
   vocab = dd(lambda: dict())
   # for kdt lookup
-  targets = []
-  targetvoc = []
-  for istarget, fdim, dfile in zip((False, True), (sourcedim, targetdim), (sourcedictionary, targetdictionary)):
-    try:
-      for ln, line in enumerate(dfile):
-        entry = line.strip().split(' ')
-        if len(entry) < fdim+2:
-          sys.stderr.write("skipping line %d in %s because it only has %d fields; first field is %s\n" % (ln, dfile.name, len(entry), entry[0]))
-          continue
-        lang = entry[0]
-        word = ' '.join(entry[1:-fdim])
-        vec = np.array(entry[-fdim:]).astype(float)
-        vocab[lang][word]=vec
-        if istarget:
-          targets.append(vec)
-          targetvoc.append(word)
-    except:
-      print dfile.name
-      print line
-      print len(entry)
-      print word
-      print ln
-      raise
-  # normalize for euclidean distance nearest neighbor => cosine with constant
-  targets = kdt(normalize(np.array(targets), axis=1, norm='l2'))
+  pretargets, targetvoc = cPickle.load(args.targetdictionary)
+  targets = kdt(pretargets)
+  invtargetvoc = dict()
+  for key, word in enumerate(targetvoc):
+    invtargetvoc[word]=key
+  print len(targetvoc)
+  
+  try:
+    for ln, line in enumerate(sourcedictionary):
+      entry = line.strip().split(' ')
+      if len(entry) < sourcedim+2:
+        sys.stderr.write("skipping line %d in %s because it only has %d fields; first field is %s\n" % (ln, sourcedictionary.name, len(entry), entry[0]))
+        continue
+      lang = entry[0]
+      word = ' '.join(entry[1:-sourcedim])
+      vec = np.array(entry[-sourcedim:]).astype(float)
+      vocab[lang][word]=vec
+  except:
+    print sourcedictionary.name
+    print line
+    print len(entry)
+    print word
+    print ln
+    raise
   print "loaded vocabularies"
 
   for line in infile:
@@ -105,11 +96,12 @@ def main():
     report = inst[:4]
     nb_words = [x[1] for x in neighbors]
     #cosines: xform to truth, xform to 1best, truth to 1best
-    truth=vocab[outlang][outword]
+    truth=pretargets[invtargetvoc[outword]]
+    onebest=pretargets[invtargetvoc[nb_words[0]]]
     xtruth=str(cosine(xform, truth))
     if len(nb_words) > 0:
-      xbest=str(cosine(xform, vocab[outlang][nb_words[0]]))
-      truthbest=str(cosine(truth, vocab[outlang][nb_words[0]]))
+      xbest=str(cosine(xform, onebest))
+      truthbest=str(cosine(truth, onebest))
     else:
       xbest="???"
       truthbest="???"

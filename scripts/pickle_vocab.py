@@ -49,7 +49,7 @@ def main():
     print ln
     raise
   # normalize for euclidean distance nearest neighbor => cosine with constant
-  targets = kdt(normalize(np.array(targets), axis=1, norm='l2'))
+  targets = normalize(np.array(targets), axis=1, norm='l2')
   data = [targets, targetvoc]
   cPickle.dump(data, args.outfile, cPickle.HIGHEST_PROTOCOL)
 if __name__ == '__main__':
