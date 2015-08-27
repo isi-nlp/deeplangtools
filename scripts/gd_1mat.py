@@ -8,7 +8,8 @@ import re
 import os.path
 import numpy as np
 from numpy import linalg as LA
-
+import os
+import errno
 
 scriptdir = os.path.dirname(os.path.abspath(__file__))
 
@@ -26,7 +27,8 @@ def main():
   parser.add_argument("--learningrate", "-r", type=float, default=0.001, help="Learning rate")
   parser.add_argument("--minibatch", "-m", type=int, default=10, help="Minibatch size")
   parser.add_argument("--iterations", "-t", type=int, default=100, help="Number of training iterations")
-  parser.add_argument("--period", "-p", type=int, default=10, help="How often to look at objective")
+  parser.add_argument("--dumpdir", "-d", default=None, help="directory to dump incremental models; no dump if not specified")
+  parser.add_argument("--period", "-p", type=int, default=10, help="How often to look at objective/dump model")
   parser.add_argument("--parammin",  default=-2, type=float, help="minimum model parameter value")
   parser.add_argument("--parammax",  default=2, type=float, help="maximum model parameter value")
   parser.add_argument("--cliprate", "-c", default=0, type=float, help="magnitude at which to clip")
@@ -37,16 +39,33 @@ def main():
   except IOError, msg:
     parser.error(str(msg))
 
+  if args.dumpdir is not None:
+    # http://stackoverflow.com/questions/600268/mkdir-p-functionality-in-python
+    try:
+        os.makedirs(args.dumpdir)
+    except OSError as exc: # Python >2.5
+        if exc.errno == errno.EEXIST and os.path.isdir(args.dumpdir):
+            pass
+        else: raise
+
   reader = codecs.getreader('utf8')
   writer = codecs.getwriter('utf8')
   infile = reader(args.infile)
   sourcedictionary = reader(args.sourcedictionary)
   targetdictionary = reader(args.targetdictionary)
   
-  sourceinfo = map(int, sourcedictionary.readline().strip().split())
-  targetinfo = map(int, targetdictionary.readline().strip().split())
-  sourcedim = sourceinfo[1]
-  targetdim = targetinfo[1]
+  sourceinfo = sourcedictionary.readline().strip().split()
+  targetinfo = targetdictionary.readline().strip().split()
+  sourcelang=sourceinfo[2]
+  targetlang=targetinfo[2]
+  dims = {}
+  dims[sourcelang] = int(sourceinfo[1])
+  dims[targetlang] = int(targetinfo[1])
+  dicts_by_lang = {}
+  dicts_by_lang[sourcelang]=sourcedictionary
+  dicts_by_lang[targetlang]=targetdictionary
+  sourcedim = dims[sourcelang]
+  targetdim = dims[targetlang]
   print sourcedim,targetdim
   # make initial transformation matrix
 
@@ -56,15 +75,16 @@ def main():
 
   # TODO: would be cool if this could exist on-disk in some binary format so only the instructions need be passed in
   vocab = dd(lambda: dict())
-  for fdim, dfile in zip((sourcedim, targetdim), (sourcedictionary, targetdictionary)):
+  for lang in (sourcelang, targetlang):
+    fdim = dims[lang]
+    dfile = dicts_by_lang[lang]
     try:
       for ln, line in enumerate(dfile):
         entry = line.strip().split(' ')
-        if len(entry) < fdim+2:
+        if len(entry) < fdim+1:
           sys.stderr.write("skipping line %d in %s because it only has %d fields; first field is %s\n" % (ln, dfile.name, len(entry), entry[0]))
           continue
-        lang = entry[0]
-        word = ' '.join(entry[1:-fdim])
+        word = ' '.join(entry[:-fdim])
         vec = np.array(entry[-fdim:])
         if word not in vocab[lang]:
           vocab[lang][word]=vec
@@ -123,6 +143,8 @@ def main():
           update = args.cliprate*update/norm
       mat = mat-(update*args.learningrate)
     if (iteration % args.period == 0): # report full training objective
+      if args.dumpdir is not None:
+        np.savez_compressed(os.path.join(args.dumpdir, "%d.model" % iteration), mat)
       batch_in = devdata[:, 2:sourcedim+2].astype(float)
       batch_out = devdata[:, sourcedim+2:].astype(float)
       im = batch_in*mat

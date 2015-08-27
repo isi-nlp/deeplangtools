@@ -38,11 +38,19 @@ def main():
   outfile = writer(args.outfile)
   sourcedictionary = reader(args.sourcedictionary)
   targetdictionary = reader(args.targetdictionary)
-  
-  sourceinfo = map(int, sourcedictionary.readline().strip().split())
-  targetinfo = map(int, targetdictionary.readline().strip().split())
-  sourcedim = sourceinfo[1]
-  targetdim = targetinfo[1]
+
+  sourceinfo = sourcedictionary.readline().strip().split()
+  targetinfo = targetdictionary.readline().strip().split()
+  sourcelang=sourceinfo[2]
+  targetlang=targetinfo[2]
+  dims = {}
+  dims[sourcelang] = int(sourceinfo[1])
+  dims[targetlang] = int(targetinfo[1])
+  dicts_by_lang = {}
+  dicts_by_lang[sourcelang]=sourcedictionary
+  dicts_by_lang[targetlang]=targetdictionary
+  sourcedim = dims[sourcelang]
+  targetdim = dims[targetlang]
   print sourcedim,targetdim
 
 
@@ -56,15 +64,17 @@ def main():
   # TODO: would be cool if this could exist on-disk in some binary format so only the instructions need be passed in
   # Kludgy: store source and target in different structures
   vocab = dd(lambda: dict())
-  for istarget, fdim, dfile in zip((False, True), (sourcedim, targetdim), (sourcedictionary, targetdictionary)):
+  for lang in (sourcelang, targetlang):
+    istarget = lang == targetlang
+    fdim = dims[lang]
+    dfile = dicts_by_lang[lang]
     try:
       for ln, line in enumerate(dfile):
         entry = line.strip().split(' ')
-        if len(entry) < fdim+2:
+        if len(entry) < fdim+1:
           sys.stderr.write("skipping line %d in %s because it only has %d fields; first field is %s\n" % (ln, dfile.name, len(entry), entry[0]))
           continue
-        lang = entry[0]
-        word = ' '.join(entry[1:-fdim])
+        word = ' '.join(entry[:-fdim])
         vec = np.array(entry[-fdim:]).astype(float)
         vocab[lang][word]=vec
         if istarget:

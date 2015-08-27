@@ -8,7 +8,8 @@ import re
 import os.path
 import numpy as np
 from numpy import linalg as LA
-
+import os
+import errno
 
 scriptdir = os.path.dirname(os.path.abspath(__file__))
 
@@ -30,6 +31,7 @@ def main():
   parser.add_argument("--cliprate", "-c", default=1, type=float, help="magnitude at which to clip")
   parser.add_argument("--noearly", action='store_true', default=False, help="no early stopping")
   parser.add_argument("--seed", default=None, type=int, help="set the seed for deterministic behavior")
+  parser.add_argument("--dumpdir", default=None, help="directory to dump incremental models; no dump if not specified")
 
   try:
     args = parser.parse_args()
@@ -37,6 +39,16 @@ def main():
     parser.error(str(msg))
 
   np.random.seed(args.seed) # TODO: is this the right way to go?
+
+  if args.dumpdir is not None:
+    # http://stackoverflow.com/questions/600268/mkdir-p-functionality-in-python
+    try:
+        os.makedirs(args.dumpdir)
+    except OSError as exc: # Python >2.5
+        if exc.errno == errno.EEXIST and os.path.isdir(args.dumpdir):
+            pass
+        else: raise
+
   reader = codecs.getreader('utf8')
   writer = codecs.getwriter('utf8')
   infile = reader(args.infile)
@@ -157,6 +169,12 @@ def main():
                 update = args.cliprate*update/norm
             mats[l] = mats[l]-(update*args.learningrate)
     if (iteration % args.period == 0): # report full training objective
+      if args.dumpdir is not None:
+        matsasdict = {}
+        for l in langdims.keys():
+          matsasdict['%s_in' % l]=inmats[l]
+          matsasdict['%s_out' % l]=outmats[l]
+          np.savez_compressed(os.path.join(args.dumpdir, "%d.model" % iteration), **matsasdict)
       l2n2 = 0
       for row in devdata:
         inlang = row[0]
