@@ -55,9 +55,10 @@ def main():
   # for kdt lookup
   targets = dd(list)
   targetvoc = dd(list)
+  models = np.load(args.modelfile)
   for l in langdims.keys():
-    inmats[l] = np.matrix(np.load(args.modelfile)['%s_in' % l])
-    outmats[l] = np.matrix(np.load(args.modelfile)['%s_out' % l])
+    inmats[l] = np.matrix(models['%s_in' % l])
+    outmats[l] = np.matrix(models['%s_out' % l])
     fdim = langdims[l]
     for dfile in dicts_by_lang[l]:
       print "processing "+dfile.name

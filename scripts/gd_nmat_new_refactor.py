@@ -1,4 +1,6 @@
 #! /usr/bin/env python
+
+# try to make the inner loop faster by assembling data before mat mult
 import argparse
 import sys
 import codecs
@@ -55,7 +57,7 @@ def main():
   dictionaries = [reader(d) for d in args.dictionaries]
   dicts_by_lang = dd(list)
   langdims = dict()
-  # TODO: alter other gd scripts to assume lang is in header only
+
   for d in dictionaries:
     info = d.readline().strip().split()
     dims = int(info[1])
@@ -86,7 +88,7 @@ def main():
             sys.stderr.write("skipping line %d in %s because it only has %d fields; first field is %s\n" % (ln, dfile.name, len(entry), entry[0]))
             continue
           word = ' '.join(entry[:-fdim])
-          vec = np.array(entry[-fdim:])
+          vec = np.array(map(float, entry[-fdim:]))
           if word not in vocab[l]:
             vocab[l][word]=vec
       except:
@@ -113,12 +115,13 @@ def main():
       skipped+=1
       continue
     # move language indices to the beginning of the vector
-    data.append(np.concatenate((np.array([inlang, outlang]), vocab[inlang][inword], vocab[outlang][outword]), axis=0))
+    data.append((inlang, outlang, 
+                 vocab[inlang][inword], 
+                 vocab[outlang][outword]))
   print "Skipped %d for missing vocab; data has %d entries" % (skipped, len(data))
   vocab.clear()
   print "Cleared vocab"
   print len(data)
-  data = np.array(data)
   np.random.shuffle(data)
   devdata = data[:args.devsize]
   data = data[args.devsize:]
@@ -126,7 +129,7 @@ def main():
     devdata = data
   print "loaded data"
 
-  batchcount = data.shape[0]/args.minibatch # some data might be left but it's shuffled each time
+  batchcount = len(data)/args.minibatch # some data might be left but it's shuffled each time
   lastl2n2=None
   for iteration in xrange(args.iterations):
     np.random.shuffle(data)
@@ -142,23 +145,23 @@ def main():
         in_updates[l] = np.zeros((dim, interdim))
         out_updates[l] = np.zeros((interdim, dim))
       # need to pick different matrices to update for each item so this will be slow
-      for row in all_batch:
-        inlang = row[0]
-        outlang = row[1]
-        rowdata = row[2:]
-        indim = langdims[inlang]
-        outdim = langdims[outlang]
+      perlangs = dd(lambda: dd(list))
+      for inlang, outlang, invec, outvec in all_batch:
         in_counts[inlang]+=1
         out_counts[outlang]+=1
-        invec = np.matrix(map(float, rowdata[:indim]))
-        outvec = np.matrix(map(float, rowdata[indim:]))
-        smat = inmats[inlang]
-        tmat = outmats[outlang]
-        im = invec*smat
-        imn = im*tmat
-        twodel = 2*(imn-outvec)
-        out_updates[outlang] += im.transpose()*twodel
-        in_updates[inlang] += invec.transpose()*twodel*tmat.transpose()
+        # could this be done in a better way so the matrices don't have to be teased apart later?
+        perlangs[inlang][outlang].append((invec, outvec))
+      for inlang in perlangs.keys():
+        for outlang in perlangs[inlang].keys():          
+          smat = inmats[inlang]
+          tmat = outmats[outlang]
+          inmat = np.matrix([x[0] for x in perlangs[inlang][outlang]])
+          outmat = np.matrix([x[1] for x in perlangs[inlang][outlang]])
+          im = inmat*smat
+          imn = im*tmat
+          twodel = 2*(imn-outmat)
+          out_updates[outlang] += im.transpose()*twodel
+          in_updates[inlang] += inmat.transpose()*twodel*tmat.transpose()
       for l in langdims.keys():
         for counts, updates, mats in zip([in_counts, out_counts], [in_updates, out_updates], [inmats, outmats]):
           if counts[l] > 0:
@@ -176,14 +179,7 @@ def main():
           matsasdict['%s_out' % l]=outmats[l]
           np.savez_compressed(os.path.join(args.dumpdir, "%d.model" % iteration), **matsasdict)
       l2n2 = 0
-      for row in devdata:
-        inlang = row[0]
-        outlang = row[1]
-        rowdata = row[2:]
-        indim = langdims[inlang]
-        outdim = langdims[outlang]
-        invec = np.matrix(map(float, rowdata[:indim]))
-        outvec = np.matrix(map(float, rowdata[indim:]))
+      for inlang, outlang, invec, outvec in devdata:
         smat = inmats[inlang]
         tmat = outmats[outlang]
         im = invec*smat
