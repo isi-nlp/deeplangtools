@@ -12,7 +12,6 @@ from numpy import linalg as LA
 
 scriptdir = os.path.dirname(os.path.abspath(__file__))
 
-# TODO: add clipping here!!
 
 def main():
   parser = argparse.ArgumentParser(description="Do gradient descent for the 2 matrix interlingus embedding experiment",
@@ -30,6 +29,7 @@ def main():
   parser.add_argument("--parammin",  default=-2, type=float, help="minimum model parameter value")
   parser.add_argument("--parammax",  default=2, type=float, help="maximum model parameter value")
   parser.add_argument("--cliprate", "-c", default=1, type=float, help="magnitude at which to clip")
+  parser.add_argument("--noearly", action='store_true', default=False, help="no early stopping")
 
   try:
     args = parser.parse_args()
@@ -138,7 +138,9 @@ def main():
       delnorm = LA.norm(delta, ord=2)
       l2n2 = delnorm*delnorm
       print "iteration "+str(iteration)+": "+str(l2n2) + " = " + str(im[:2,:10]) + " vs " + str(batch_out[:2,:10])
-      if lastl2n2 is not None and l2n2 >= lastl2n2:
+      if args.noearly:
+        pass
+      elif lastl2n2 is not None and l2n2 >= lastl2n2:
         print "Stopping early"
         break
       lastl2n2=l2n2

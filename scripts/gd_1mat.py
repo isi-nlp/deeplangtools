@@ -29,7 +29,8 @@ def main():
   parser.add_argument("--period", "-p", type=int, default=10, help="How often to look at objective")
   parser.add_argument("--parammin",  default=-2, type=float, help="minimum model parameter value")
   parser.add_argument("--parammax",  default=2, type=float, help="maximum model parameter value")
-
+  parser.add_argument("--cliprate", "-c", default=0, type=float, help="magnitude at which to clip")
+  parser.add_argument("--noearly", action='store_true', default=False, help="no early stopping")
 
   try:
     args = parser.parse_args()
@@ -116,6 +117,10 @@ def main():
       im = batch_in*mat
       twodel = 2*(im-batch_out)
       update = batch_in.transpose()*twodel/args.minibatch
+      if args.cliprate > 0:
+        norm = LA.norm(update, ord=2)
+        if norm > args.cliprate:
+          update = args.cliprate*update/norm
       mat = mat-(update*args.learningrate)
     if (iteration % args.period == 0): # report full training objective
       batch_in = devdata[:, 2:sourcedim+2].astype(float)
@@ -125,7 +130,9 @@ def main():
       delnorm = LA.norm(delta, ord=2)
       l2n2 = delnorm*delnorm
       print "iteration "+str(iteration)+": "+str(l2n2) + " = " + str(im[:2,:10]) + " vs " + str(batch_out[:2,:10])
-      if lastl2n2 is not None and l2n2 >= lastl2n2:
+      if args.noearly:
+        pass
+      elif lastl2n2 is not None and l2n2 >= lastl2n2:
         print "Stopping early"
         break
       lastl2n2=l2n2

@@ -16,13 +16,9 @@ from sklearn.preprocessing import normalize
 scriptdir = os.path.dirname(os.path.abspath(__file__))
 
 def main():
-  parser = argparse.ArgumentParser(description="Evaluate the 2 matrix embedding experiment",
+  parser = argparse.ArgumentParser(description="Evaluate the n matrix embedding experiment",
                                    formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-  parser.add_argument("--sourcedictionary", "-S", type=argparse.FileType('r'),  help="source vocabulary dictionary of the form lang word vec; headed by row col")
-  parser.add_argument("--targetdictionary", "-T", type=argparse.FileType('r'),  help="target vocabulary dictionary of the form lang word vec; headed by row col")
-  parser.add_argument("--pickle", "-p", action='store_true', default=False, help='set to true to assume -T is pickled data (faster loading)')
-  parser.add_argument("--bits", "-b", default=10, type=int, help="number of bits for hash projection. higher = more accurate knn (and slower)")
-
+  parser.add_argument("--dictionaries", "-d", nargs='+', type=argparse.FileType('r'), default=[sys.stdin,], help="vocabulary dictionaries of the form word vec with a header")
   parser.add_argument("--infile", "-i", type=argparse.FileType('r'), default=sys.stdin, help="evaluation instruction of the form word1 lang1 lang2 [word2]. If word2 is absent it is only predicted, not evaluated")
   parser.add_argument("--modelfile", "-m", nargs='?', type=argparse.FileType('r'), default=sys.stdin, help="all models input file")
   parser.add_argument("--outfile", "-o", nargs='?', type=argparse.FileType('w'), default=sys.stdout, help="results file of the form word1 lang1 lang2 word2 [pos wordlist], where the first three fields are identical to eval and the last field is the 1-best prediction. If truth is known, ordinal position of correct answer (-1 if not found) followed by the n-best list in order")
@@ -38,52 +34,54 @@ def main():
   reader = codecs.getreader('utf8')
   writer = codecs.getwriter('utf8')
   infile = reader(args.infile)
+  dictionaries = [reader(d) for d in args.dictionaries]
+  dicts_by_lang = dd(list)
+  langdims = dict()
   outfile = writer(args.outfile)
-  sourcedictionary = reader(args.sourcedictionary)
-  targetdictionary = reader(args.targetdictionary)
-  
-  sourceinfo = map(int, sourcedictionary.readline().strip().split())
-  targetinfo = map(int, targetdictionary.readline().strip().split())
-  sourcedim = sourceinfo[1]
-  targetdim = targetinfo[1]
-  print sourcedim,targetdim
+  for d in dictionaries:
+    info = d.readline().strip().split()
+    dims = int(info[1])
+    lang = info[2]
+    if lang in langdims:
+      if dims != langdims[lang]:
+        raise ValueError("Multiple dimensions seen for %s: %d and %d" % (lang, dims, langdims[lang]))
+    else:
+      langdims[lang]=dims
+    dicts_by_lang[lang].append(d)
 
-
-  smat = np.matrix(np.load(args.modelfile)['s'])
-  tmat = np.matrix(np.load(args.modelfile)['t'])
-  print smat.shape
-  print tmat.shape
-  
-  # load transformation matrices
-  # TODO: would be cool if this could exist on-disk in some binary format so only the instructions need be passed in
-  # Kludgy: store source and target in different structures
+  inmats = {}
+  outmats = {}
   vocab = dd(lambda: dict())
   # for kdt lookup
-  targets = []
-  targetvoc = []
-  for istarget, fdim, dfile in zip((False, True), (sourcedim, targetdim), (sourcedictionary, targetdictionary)):
-    try:
-      for ln, line in enumerate(dfile):
-        entry = line.strip().split(' ')
-        if len(entry) < fdim+2:
-          sys.stderr.write("skipping line %d in %s because it only has %d fields; first field is %s\n" % (ln, dfile.name, len(entry), entry[0]))
-          continue
-        lang = entry[0]
-        word = ' '.join(entry[1:-fdim])
-        vec = np.array(entry[-fdim:]).astype(float)
-        vocab[lang][word]=vec
-        if istarget:
-          targets.append(vec)
-          targetvoc.append(word)
-    except:
-      print dfile.name
-      print line
-      print len(entry)
-      print word
-      print ln
-      raise
-  # normalize for euclidean distance nearest neighbor => cosine with constant
-  targets = kdt(normalize(np.array(targets), axis=1, norm='l2'))
+  targets = dd(list)
+  targetvoc = dd(list)
+  for l in langdims.keys():
+    inmats[l] = np.matrix(np.load(args.modelfile)['%s_in' % l])
+    outmats[l] = np.matrix(np.load(args.modelfile)['%s_out' % l])
+    fdim = langdims[l]
+    for dfile in dicts_by_lang[l]:
+      print "processing "+dfile.name
+      try:
+        for ln, line in enumerate(dfile):
+          entry = line.strip().split(' ')
+          if len(entry) < fdim+1:
+            sys.stderr.write("skipping line %d in %s because it only has %d fields; first field is %s\n" % (ln, dfile.name, len(entry), entry[0]))
+            continue
+          word = ' '.join(entry[:-fdim])
+          vec = np.array(entry[-fdim:]).astype(float)
+#          print "Adding "+l+" -> "+word
+          vocab[l][word]=vec
+          targets[l].append(vec)
+          targetvoc[l].append(word)
+      except:
+        print dfile.name
+        print line
+        print len(entry)
+        print word
+        print ln
+        raise
+    # normalize for euclidean distance nearest neighbor => cosine with constant
+    targets[l] = kdt(normalize(np.array(targets[l]), axis=1, norm='l2'))
   print "loaded vocabularies"
 
   for line in infile:
@@ -95,14 +93,17 @@ def main():
     if inword not in vocab[inlang]:
       sys.stderr.write("Warning: Couldn't find %s -> %s\n" % (inlang, inword))
       continue
+    smat = inmats[inlang]
+    tmat = outmats[outlang]
     invec = np.matrix(vocab[inlang][inword])
     xform = np.asarray(invec*smat*tmat)[0]
     neighbors = []
-    cosines, cands = targets.query(xform, args.nbest)
+    cosines, cands = targets[outlang].query(xform, args.nbest)
     for cos, cand in zip(cosines, cands):
-      neighbors.append((cos, targetvoc[cand]))
+      neighbors.append((cos, targetvoc[outlang][cand]))
     report = inst[:4]
     nb_words = [x[1] for x in neighbors]
+#    print nb_words
     #cosines: xform to truth, xform to 1best, truth to 1best
     truth=vocab[outlang][outword]
     xtruth=str(cosine(xform, truth))
