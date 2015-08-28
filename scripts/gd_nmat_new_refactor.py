@@ -21,7 +21,7 @@ def main():
                                    formatter_class=argparse.ArgumentDefaultsHelpFormatter)
   parser.add_argument("--dictionaries", "-d", nargs='+', type=argparse.FileType('r'), help="vocabulary dictionaries of the form word lang vec")
   parser.add_argument("--idim", "-I", default=128, type=int, help="dimension of interlingus")
-  parser.add_argument("--infile", "-i", type=argparse.FileType('r'), default=sys.stdin, help="training instruction of the form word1 lang1 lang2 word2")
+  parser.add_argument("--infiles", "-i", nargs='+', type=argparse.FileType('r'), help="training instruction of the form word1 lang1 lang2 word2")
   parser.add_argument("--devsize", "-s", type=int, default=0, help="How much dev data to sample; rest is training")
   parser.add_argument("--modelfile", "-f", nargs='?', type=argparse.FileType('w'), default=sys.stdout, help="all models output file")
   parser.add_argument("--learningrate", "-r", type=float, default=0.001, help="Learning rate")
@@ -53,7 +53,7 @@ def main():
 
   reader = codecs.getreader('utf8')
   writer = codecs.getwriter('utf8')
-  infile = reader(args.infile)
+  infiles = [reader(x) for x in args.infiles]
   dictionaries = [reader(d) for d in args.dictionaries]
   dicts_by_lang = dd(list)
   langdims = dict()
@@ -102,22 +102,23 @@ def main():
   print "loaded vocabularies"
   data = []
   skipped = 0
-  for line in infile:
-    inst = line.strip().split()
-    inword = inst[0]
-    inlang = inst[1]
-    outlang = inst[2]
-    outword = inst[3]
-    if inword not in vocab[inlang]:
-      skipped+=1
-      continue
-    if outword not in vocab[outlang]:
-      skipped+=1
-      continue
-    # move language indices to the beginning of the vector
-    data.append((inlang, outlang, 
-                 vocab[inlang][inword], 
-                 vocab[outlang][outword]))
+  for infile in infiles:
+    for line in infile:
+      inst = line.strip().split()
+      inword = inst[0]
+      inlang = inst[1]
+      outlang = inst[2]
+      outword = inst[3]
+      if inword not in vocab[inlang]:
+        skipped+=1
+        continue
+      if outword not in vocab[outlang]:
+        skipped+=1
+        continue
+      # move language indices to the beginning of the vector
+      data.append((inlang, outlang, 
+                   vocab[inlang][inword], 
+                   vocab[outlang][outword]))
   print "Skipped %d for missing vocab; data has %d entries" % (skipped, len(data))
   vocab.clear()
   print "Cleared vocab"
