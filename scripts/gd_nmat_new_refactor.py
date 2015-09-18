@@ -12,6 +12,7 @@ import numpy as np
 from numpy import linalg as LA
 import os
 import errno
+import time
 
 scriptdir = os.path.dirname(os.path.abspath(__file__))
 
@@ -39,6 +40,9 @@ def main():
     args = parser.parse_args()
   except IOError, msg:
     parser.error(str(msg))
+
+
+  starttime = time.time()
 
   np.random.seed(args.seed) # TODO: is this the right way to go?
 
@@ -99,7 +103,8 @@ def main():
         print ln
         raise
 
-  print "loaded vocabularies"
+  loadtime = time.time()
+  print "loaded vocabularies: %f secs" % (loadtime-starttime)
   data = []
   skipped = 0
   for infile in infiles:
@@ -121,6 +126,7 @@ def main():
                    vocab[outlang][outword]))
   print "Skipped %d for missing vocab; data has %d entries" % (skipped, len(data))
   vocab.clear()
+
   print "Cleared vocab"
   print len(data)
   np.random.shuffle(data)
@@ -128,15 +134,24 @@ def main():
   data = data[args.devsize:]
   if len(devdata) == 0:
     devdata = data
-  print "loaded data"
+  preptime = time.time()
+  print "loaded data: prep time = %f secs" % (preptime-loadtime)
 
-  batchcount = len(data)/args.minibatch # some data might be left but it's shuffled each time
+  minibatch = min(len(data), args.minibatch)
+  if minibatch < args.minibatch:
+    print "Warning: reduced minibatch size to %d because not enough data" % minibatch
+
+
+  batchcount = len(data)/minibatch # some data might be left but it's shuffled each time
   lastl2n2=None
   for iteration in xrange(args.iterations):
     np.random.shuffle(data)
+    batchtimes = []
+    itstart = time.time()
     for batchnum in xrange(batchcount):
-      rowstart=batchnum*args.minibatch
-      rowend = rowstart+args.minibatch
+      batchstart = time.time()
+      rowstart=batchnum*minibatch
+      rowend = rowstart+minibatch
       all_batch = data[rowstart:rowend]
       in_updates = {}
       out_updates = {}
@@ -172,6 +187,9 @@ def main():
               if norm > args.cliprate:
                 update = args.cliprate*update/norm
             mats[l] = mats[l]-(update*args.learningrate)
+      batchtimes.append(time.time()-batchstart)
+    itend = time.time()
+    print "Average time per minibatch: %f (%f std); iteration time %f" % (np.mean(batchtimes), np.std(batchtimes), itend-itstart)
     if (iteration % args.period == 0): # report full training objective
       if args.dumpdir is not None:
         matsasdict = {}

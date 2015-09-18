@@ -21,7 +21,7 @@ def main():
                                    formatter_class=argparse.ArgumentDefaultsHelpFormatter)
   parser.add_argument("--sourcedictionary", "-S", type=argparse.FileType('r'),  help="source vocabulary dictionary of the form lang word vec; headed by row col")
   parser.add_argument("--targetdictionary", "-T", type=argparse.FileType('r'),  help="target vocabulary dictionary of the form lang word vec; headed by row col")
-  parser.add_argument("--infile", "-i", type=argparse.FileType('r'), default=sys.stdin, help="training instruction of the form word1 lang1 lang2 word2")
+  parser.add_argument("--infiles", "-i", nargs='+', type=argparse.FileType('r'), help="training instruction of the form word1 lang1 lang2 word2")
   parser.add_argument("--devsize", "-s", type=int, default=0, help="How much dev data to sample; rest is training")
   parser.add_argument("--modelfile", "-f", nargs='?', type=argparse.FileType('w'), default=sys.stdout, help="all models output file")
   parser.add_argument("--learningrate", "-r", type=float, default=0.001, help="Learning rate")
@@ -50,7 +50,7 @@ def main():
 
   reader = codecs.getreader('utf8')
   writer = codecs.getwriter('utf8')
-  infile = reader(args.infile)
+  infiles = [reader(x) for x in args.infiles]
   sourcedictionary = reader(args.sourcedictionary)
   targetdictionary = reader(args.targetdictionary)
   
@@ -99,20 +99,21 @@ def main():
   print "loaded vocabularies"
   data = []
   skipped = 0
-  for line in infile:
-    inst = line.strip().split()
-    inword = inst[0]
-    inlang = inst[1]
-    outlang = inst[2]
-    outword = inst[3]
-    if inword not in vocab[inlang]:
-      skipped+=1
-      continue
-    if outword not in vocab[outlang]:
-      skipped+=1
-      continue
-    # move language indices to the beginning of the vector
-    data.append(np.concatenate((np.array([inlang, outlang]), vocab[inlang][inword], vocab[outlang][outword]), axis=0))
+  for infile in infiles:
+    for line in infile:
+      inst = line.strip().split()
+      inword = inst[0]
+      inlang = inst[1]
+      outlang = inst[2]
+      outword = inst[3]
+      if inword not in vocab[inlang]:
+        skipped+=1
+        continue
+      if outword not in vocab[outlang]:
+        skipped+=1
+        continue
+      # move language indices to the beginning of the vector
+      data.append(np.concatenate((np.array([inlang, outlang]), vocab[inlang][inword], vocab[outlang][outword]), axis=0))
   print "Skipped %d for missing vocab; data has %d entries" % (skipped, len(data))
   vocab.clear()
   print "Cleared vocab"
@@ -124,19 +125,22 @@ def main():
   if len(devdata) == 0:
     devdata = data
   print "loaded data"
+  minibatch = min(data.shape[0], args.minibatch)
+  if minibatch < args.minibatch:
+    print "Warning: reduced minibatch size to %d because not enough data" % minibatch
 
-  batchcount = data.shape[0]/args.minibatch # some data might be left but it's shuffled each time
+  batchcount = data.shape[0]/minibatch # some data might be left but it's shuffled each time
   lastl2n2=None
   for iteration in xrange(args.iterations):
     np.random.shuffle(data)
     for batchnum in xrange(batchcount):
-      rowstart=batchnum*args.minibatch
-      rowend = rowstart+args.minibatch
+      rowstart=batchnum*minibatch
+      rowend = rowstart+minibatch
       batch_in = data[rowstart:rowend, 2:sourcedim+2].astype(float)
       batch_out = data[rowstart:rowend, sourcedim+2:].astype(float)
       im = batch_in*mat
       twodel = 2*(im-batch_out)
-      update = batch_in.transpose()*twodel/args.minibatch
+      update = batch_in.transpose()*twodel/minibatch
       if args.cliprate > 0:
         norm = LA.norm(update, ord=2)
         if norm > args.cliprate:

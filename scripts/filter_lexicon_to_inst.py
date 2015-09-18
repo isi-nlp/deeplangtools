@@ -10,9 +10,9 @@ scriptdir = os.path.dirname(os.path.abspath(__file__))
 
 
 def main():
-  parser = argparse.ArgumentParser(description="Given MITRE titles file and vocabularies use some heuristics to filter down the list and output in instruction style",
+  parser = argparse.ArgumentParser(description="Given LRLP lexicon and vocabularies use some heuristics to filter down the list and output in instruction style",
                                    formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-  parser.add_argument("--infile", "-i", nargs='?', type=argparse.FileType('r'), default=sys.stdin, help="input titles file")
+  parser.add_argument("--infile", "-i", nargs='?', type=argparse.FileType('r'), default=sys.stdin, help="input lexicon file")
   parser.add_argument("--sourcedict", "-S", type=argparse.FileType('r'), help="source dictionary file")
   parser.add_argument("--targetdict", "-T", type=argparse.FileType('r'), help="target dictionary file")
   parser.add_argument("--sourcelang", "-s", default="spa", help="source language")
@@ -45,25 +45,39 @@ def main():
   oov = 0
   mword = 0
   for line in infile:
-    src, trg = line.lstrip().rstrip().split(" ||| ")
-    src = src.split()
-    trg = trg.split()
-    # singletons only
-    if len(src) != 1 or len(trg) != 1:
+    try:
+      src, pos, trgs = line.lstrip().rstrip().split("\t")
+    except:
+      sys.stderr.write("Bad line: "+line)
+      continue
+    src = re.sub(r'\([^\(\)]+\)', '', src).split()
+    # src singletons only
+    if len(src) != 1:
       mword+=1
       continue
     src = src[0].lower()
-    trg = trg[0].lower()
-    # no identities
-    if (not args.includeident) and src == trg:
-      identities+=1
-      continue
-    # no oov
-    if src not in sourcedict or trg not in targetdict:
+    # no src oov
+    if src not in sourcedict:
       oov+=1
       continue
-    # OTHER HEURISTICS...
-    outfile.write("%s %s %s %s\n" % (src, args.sourcelang, args.targetlang, trg))
+    # get rid of parentheticals and split on commas or semicolons
+    trgs = re.split(r'[;,]', re.sub(r'\([^\(\)]+\)', '', trgs.lower()))
+    for trg in trgs:
+      trg = trg.strip()
+      # no multiwords or empties
+      if len(trg.split()) != 1:
+        mword+=1
+        continue
+      # no identities
+      if (not args.includeident) and src == trg:
+        identities+=1
+        continue
+      # no trg oov
+      if trg not in targetdict:
+        oov+=1
+        continue
+      # OTHER HEURISTICS...
+      outfile.write("%s %s %s %s\n" % (src, args.sourcelang, args.targetlang, trg))
   sys.stderr.write("%d ident %d oov %d mword\n" % (identities, oov, mword))
 if __name__ == '__main__':
   main()
