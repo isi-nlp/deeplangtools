@@ -32,9 +32,9 @@ def main():
     parser.error(str(msg))
 
 
-  reader = codecs.getreader('utf8')
+#  reader = codecs.getreader('utf8')
   writer = codecs.getwriter('utf8')
-  infile = reader(args.infile)
+  infile = args.infile
   dictionaries = [pickle.load(d) for d in args.dictionaries] if args.pickle else [reader(d) for d in args.dictionaries]
   dicts_by_lang = dd(list)
   langdims = dict()
