@@ -33,12 +33,12 @@ def main():
 
 
 #  reader = codecs.getreader('utf8')
-  writer = codecs.getwriter('utf8')
+#  writer = codecs.getwriter('utf8')
   infile = args.infile
-  dictionaries = [pickle.load(d) for d in args.dictionaries] if args.pickle else [reader(d) for d in args.dictionaries]
+  dictionaries = [pickle.load(d) for d in args.dictionaries] if args.pickle else [d for d in args.dictionaries]
   dicts_by_lang = dd(list)
   langdims = dict()
-  outfile = writer(args.outfile)
+  outfile = args.outfile
   for d in dictionaries:
     if args.pickle:
       lang = d['lang']
