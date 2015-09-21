@@ -4,7 +4,7 @@
 import argparse
 import sys
 import codecs
-from itertools import izip
+
 from collections import defaultdict as dd
 import re
 import os.path
@@ -39,7 +39,7 @@ def main():
 
   try:
     args = parser.parse_args()
-  except IOError, msg:
+  except IOError as msg:
     parser.error(str(msg))
 
 
@@ -56,10 +56,10 @@ def main():
             pass
         else: raise
 
-  reader = codecs.getreader('utf8')
-  writer = codecs.getwriter('utf8')
-  infiles = [reader(x) for x in args.infiles]
-  dictionaries = [reader(d) for d in args.dictionaries]
+#  reader = codecs.getreader('utf8')
+#  writer = codecs.getwriter('utf8')
+  infiles = [x for x in args.infiles]
+  dictionaries = [d for d in args.dictionaries]
   dicts_by_lang = dd(list)
   langdims = dict()
 
@@ -81,7 +81,7 @@ def main():
   outmats = {}
   # TODO: would be cool if this could exist on-disk in some binary format so only the instructions need be passed in
   vocab = dd(lambda: dict())
-  for l in langdims.keys():
+  for l in list(langdims.keys()):
     inmats[l] = np.matrix((np.random.rand(langdims[l], interdim)*paramrange)+args.parammin)
     outmats[l] = np.matrix((np.random.rand(langdims[l], interdim)*paramrange)+args.parammin).transpose()
     fdim = langdims[l]
@@ -93,19 +93,19 @@ def main():
             sys.stderr.write("skipping line %d in %s because it only has %d fields; first field is %s\n" % (ln, dfile.name, len(entry), entry[0]))
             continue
           word = ' '.join(entry[:-fdim])
-          vec = np.array(map(float, entry[-fdim:]))
+          vec = np.array(list(map(float, entry[-fdim:])))
           if word not in vocab[l]:
             vocab[l][word]=vec
       except:
-        print dfile.name
-        print line
-        print len(entry)
-        print word
-        print ln
+        print(dfile.name)
+        print(line)
+        print(len(entry))
+        print(word)
+        print(ln)
         raise
 
   loadtime = time.time()
-  print "loaded vocabularies: %f secs" % (loadtime-starttime)
+  print("loaded vocabularies: %f secs" % (loadtime-starttime))
   data = []
   skipped = 0
   for infile in infiles:
@@ -125,57 +125,31 @@ def main():
       data.append((inlang, outlang, 
                    vocab[inlang][inword], 
                    vocab[outlang][outword]))
-  print "Skipped %d for missing vocab; data has %d entries" % (skipped, len(data))
-  np.random.shuffle(data)
-  try:
-    devsize = int(args.dev)
-    devdata = data[:devsize]
-    data = data[devsize:]
-    if len(devdata) == 0:
-      devdata = data
-  except ValueError:
-    print "Using fixed dev set "+args.dev
-    devfile = reader(open(args.dev))
-    devdata = []
-    skipped = 0
-    for line in devfile:
-      inst = line.strip().split()
-      inword = inst[0]
-      inlang = inst[1]
-      outlang = inst[2]
-      outword = inst[3]
-      if inword not in vocab[inlang]:
-        skipped+=1
-        continue
-      if outword not in vocab[outlang]:
-        skipped+=1
-        continue
-      # move language indices to the beginning of the vector
-      devdata.append((inlang, outlang, 
-                      vocab[inlang][inword], 
-                      vocab[outlang][outword]))
-    print "Skipped %d of dev for missing vocab; dev data has %d entries" % (skipped, len(devdata))
-    np.random.shuffle(devdata)
+  print("Skipped %d for missing vocab; data has %d entries" % (skipped, len(data)))
   vocab.clear()
-  print "Cleared vocab"
 
+  print("Cleared vocab")
+  print(len(data))
+  np.random.shuffle(data)
+  devdata = data[:args.devsize]
+  data = data[args.devsize:]
+  if len(devdata) == 0:
+    devdata = data
   preptime = time.time()
-  print "loaded data: prep time = %f secs" % (preptime-loadtime)
+  print("loaded data: prep time = %f secs" % (preptime-loadtime))
 
   minibatch = min(len(data), args.minibatch)
   if minibatch < args.minibatch:
-    print "Warning: reduced minibatch size to %d because not enough data" % minibatch
+    print("Warning: reduced minibatch size to %d because not enough data" % minibatch)
 
 
-  batchcount = len(data)/minibatch # some data might be left but it's shuffled each time
-  lastl2n2=getl2n2(devdata, inmats, outmats)
-
-  learningrate=args.learningrate
-  for iteration in xrange(args.iterations):
+  batchcount = int(len(data)/minibatch) # some data might be left but it's shuffled each time
+  lastl2n2=None
+  for iteration in range(args.iterations):
     np.random.shuffle(data)
     batchtimes = []
     itstart = time.time()
-    for batchnum in xrange(batchcount):
+    for batchnum in range(batchcount):
       batchstart = time.time()
       rowstart=batchnum*minibatch
       rowend = rowstart+minibatch
@@ -184,7 +158,7 @@ def main():
       out_updates = {}
       in_counts = dd(int)
       out_counts = dd(int)
-      for l, dim in langdims.iteritems():
+      for l, dim in langdims.items():
         in_updates[l] = np.zeros((dim, interdim))
         out_updates[l] = np.zeros((interdim, dim))
       # need to pick different matrices to update for each item so this will be slow
@@ -194,8 +168,8 @@ def main():
         out_counts[outlang]+=1
         # could this be done in a better way so the matrices don't have to be teased apart later?
         perlangs[inlang][outlang].append((invec, outvec))
-      for inlang in perlangs.keys():
-        for outlang in perlangs[inlang].keys():          
+      for inlang in list(perlangs.keys()):
+        for outlang in list(perlangs[inlang].keys()):          
           smat = inmats[inlang]
           tmat = outmats[outlang]
           inmat = np.matrix([x[0] for x in perlangs[inlang][outlang]])
@@ -205,57 +179,47 @@ def main():
           twodel = 2*(imn-outmat)
           out_updates[outlang] += im.transpose()*twodel
           in_updates[inlang] += inmat.transpose()*twodel*tmat.transpose()
-      for counts, updates, mats in zip([in_counts, out_counts], [in_updates, out_updates], [inmats, outmats]):
-        for l in langdims.keys():
+      for l in list(langdims.keys()):
+        for counts, updates, mats in zip([in_counts, out_counts], [in_updates, out_updates], [inmats, outmats]):
           if counts[l] > 0:
-            #update = updates[l]/counts[l]
-            update = updates[l]/minibatch
+            update = updates[l]/counts[l]
             if args.cliprate > 0:
               norm = LA.norm(update, ord=2)
               if norm > args.cliprate:
                 update = args.cliprate*update/norm
-            mats[l] = mats[l]-(update*learningrate) # should this be divided by batch size? or does counts[l] take care of it?
+            mats[l] = mats[l]-(update*args.learningrate)
       batchtimes.append(time.time()-batchstart)
     itend = time.time()
-    if args.halverate:
-      l2n2 = getl2n2(devdata, inmats, outmats)
-      if l2n2 > lastl2n2:
-        learningrate /= 2.0        
-        print "iteration %d: %f > %f; lr -> %f" % (iteration, l2n2, lastl2n2, learningrate)
-      lastl2n2 = l2n2
-    #print "Average time per minibatch: %f (%f std); iteration time %f" % (np.mean(batchtimes), np.std(batchtimes), itend-itstart)
+#    print("Average time per minibatch: %f (%f std); iteration time %f" % (np.mean(batchtimes), np.std(batchtimes), itend-itstart))
     if (iteration % args.period == 0): # report full training objective
       if args.dumpdir is not None:
         matsasdict = {}
-        for l in langdims.keys():
+        for l in list(langdims.keys()):
           matsasdict['%s_in' % l]=inmats[l]
           matsasdict['%s_out' % l]=outmats[l]
           np.savez_compressed(os.path.join(args.dumpdir, "%d.model" % iteration), **matsasdict)
-      l2n2 = getl2n2(devdata, inmats, outmats)
-      print "iteration "+str(iteration)+": "+str(l2n2)
+      l2n2 = 0
+      for inlang, outlang, invec, outvec in devdata:
+        smat = inmats[inlang]
+        tmat = outmats[outlang]
+        im = invec*smat
+        imn = im*tmat
+        delta = imn-outvec
+        delnorm = LA.norm(delta, ord=2)
+        l2n2 += delnorm*delnorm
+      print("iteration "+str(iteration)+": "+str(l2n2))
       if args.noearly:
         pass
       elif lastl2n2 is not None and l2n2 >= lastl2n2:
-        print "Stopping early"
+        print("Stopping early")
         break
       lastl2n2=l2n2
   matsasdict = {}
-  for l in langdims.keys():
+  for l in list(langdims.keys()):
     matsasdict['%s_in' % l]=inmats[l]
     matsasdict['%s_out' % l]=outmats[l]
   np.savez_compressed(args.modelfile, **matsasdict)
 
-def getl2n2(devdata, inmats, outmats):
-  l2n2=0.0
-  for inlang, outlang, invec, outvec in devdata:
-    smat = inmats[inlang]
-    tmat = outmats[outlang]
-    im = invec*smat
-    imn = im*tmat
-    delta = imn-outvec
-    delnorm = LA.norm(delta, ord=2)
-    l2n2 += delnorm*delnorm
-  return l2n2
 if __name__ == '__main__':
   main()
 
