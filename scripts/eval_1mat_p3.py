@@ -22,7 +22,7 @@ def main():
   parser.add_argument("--sourcedictionary", "-S", type=argparse.FileType('r'),  help="source vocabulary dictionary of the form lang word vec; headed by row col")
   parser.add_argument("--targetdictionary", "-T", type=argparse.FileType('r'),  help="target vocabulary dictionary of the form lang word vec; headed by row col")
   parser.add_argument("--infile", "-i", type=argparse.FileType('r'), default=sys.stdin, help="evaluation instruction of the form word1 lang1 lang2 [word2]. If word2 is absent it is only predicted, not evaluated")
-  parser.add_argument("--modelfile", "-m", nargs='?', type=argparse.FileType('r'), default=sys.stdin, help="all models input file")
+  parser.add_argument("--modelfile", "-m", help="all models input file")
   parser.add_argument("--outfile", "-o", nargs='?', type=argparse.FileType('w'), default=sys.stdout, help="results file of the form word1 lang1 lang2 word2 [pos wordlist], where the first three fields are identical to eval and the last field is the 1-best prediction. If truth is known, ordinal position of correct answer (-1 if not found) followed by the n-best list in order")
   parser.add_argument("--nbest", "-n", type=int, default=10, help="nbest neighbors generated for purposes of evaluation")
   parser.add_argument("--pickle", "-p", action='store_true', default=False, help="dictionaries are pickled with pickle_vocab")
@@ -33,12 +33,10 @@ def main():
     parser.error(str(msg))
 
 
-  reader = codecs.getreader('utf8')
-  writer = codecs.getwriter('utf8')
-  infile = reader(args.infile)
-  outfile = writer(args.outfile)
-  sourcedictionary = pickle.load(args.sourcedictionary) if args.pickle else reader(args.sourcedictionary)
-  targetdictionary = pickle.load(args.targetdictionary) if args.pickle else reader(args.targetdictionary)
+  infile =  args.infile
+  outfile = args.outfile
+  sourcedictionary = pickle.load(args.sourcedictionary) if args.pickle else args.sourcedictionary
+  targetdictionary = pickle.load(args.targetdictionary) if args.pickle else args.targetdictionary
 
   dims = {}
   if args.pickle:
