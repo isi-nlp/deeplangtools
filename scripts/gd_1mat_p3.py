@@ -23,7 +23,7 @@ def main():
   parser.add_argument("--targetdictionary", "-T", type=argparse.FileType('r', encoding='utf-8'),  help="target vocabulary dictionary of the form lang word vec; headed by row col")
   parser.add_argument("--infiles", "-i", nargs='+', type=argparse.FileType('r', encoding='utf-8'), help="training instruction of the form word1 lang1 lang2 word2")
   parser.add_argument("--devsize", "-s", type=int, default=0, help="How much dev data to sample; rest is training")
-  parser.add_argument("--modelfile", "-f", nargs='?', type=argparse.FileType('w'), default=sys.stdout, help="all models output file")
+  parser.add_argument("--modelfile", "-f", help="all models output file")
   parser.add_argument("--learningrate", "-r", type=float, default=0.001, help="Learning rate")
   parser.add_argument("--minibatch", "-m", type=int, default=10, help="Minibatch size")
   parser.add_argument("--iterations", "-t", type=int, default=100, help="Number of training iterations")
@@ -132,7 +132,7 @@ def main():
   if minibatch < args.minibatch:
     print("Warning: reduced minibatch size to %d because not enough data" % minibatch)
 
-  batchcount = data.shape[0]/minibatch # some data might be left but it's shuffled each time
+  batchcount = int(data.shape[0]/minibatch) # some data might be left but it's shuffled each time
   lastl2n2=None
   for iteration in range(args.iterations):
     np.random.shuffle(data)
