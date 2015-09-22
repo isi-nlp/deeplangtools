@@ -124,7 +124,7 @@ def main():
     report = inst[:3]
     nb_words = [x[1] for x in neighbors]
     xbest=str(cosine(xform, vocab[outlang][nb_words[0]]))
-    if outword is not None:
+    if outword is not None and outword in vocab[outlang]:
       report.append(inst[3])
       #cosines: xform to truth, xform to 1best, truth to 1best
       truth=vocab[outlang][outword]

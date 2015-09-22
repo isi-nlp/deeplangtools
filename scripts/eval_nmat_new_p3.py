@@ -114,19 +114,20 @@ def main():
       nb_words = [x[1] for x in neighbors]
   #    print nb_words
       #cosines: xform to truth, xform to 1best, truth to 1best
-      truth=vocab[outlang][outword]
-      xtruth=str(cosine(xform, truth))
-      if len(nb_words) > 0:
-        xbest=str(cosine(xform, vocab[outlang][nb_words[0]]))
-        truthbest=str(cosine(truth, vocab[outlang][nb_words[0]]))
-      else:
-        xbest="???"
-        truthbest="???"
-      rank = nb_words.index(outword) if outword in nb_words else -1
-      report.append(str(rank))
-      report.extend([xtruth, xbest, truthbest])
-      if not args.hidewords:
-        report.extend(nb_words)
+      if outword in vocab[outlang]:
+        truth=vocab[outlang][outword]
+        xtruth=str(cosine(xform, truth))
+        if len(nb_words) > 0:
+          xbest=str(cosine(xform, vocab[outlang][nb_words[0]]))
+          truthbest=str(cosine(truth, vocab[outlang][nb_words[0]]))
+        else:
+          xbest="???"
+          truthbest="???"
+        rank = nb_words.index(outword) if outword in nb_words else -1
+        report.append(str(rank))
+        report.extend([xtruth, xbest, truthbest])
+        if not args.hidewords:
+          report.extend(nb_words)
     outfile.write('\t'.join(report)+"\n")
   # TODO: some overall stats to stderr?
 
