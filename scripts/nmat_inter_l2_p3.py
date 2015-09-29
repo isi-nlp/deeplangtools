@@ -16,16 +16,13 @@ import pickle
 scriptdir = os.path.dirname(os.path.abspath(__file__))
 
 def main():
-  parser = argparse.ArgumentParser(description="Evaluate the n matrix embedding experiment",
+  parser = argparse.ArgumentParser(description="Show l2norm of all pairwise languages in a trained model",
                                    formatter_class=argparse.ArgumentDefaultsHelpFormatter)
   parser.add_argument("--dictionaries", "-d", nargs='+', type=argparse.FileType('r'), default=[sys.stdin,], help="vocabulary dictionaries of the form word vec with a header")
-  parser.add_argument("--infile", "-i", type=argparse.FileType('r'), default=sys.stdin, help="evaluation instruction of the form word1 lang1 lang2 [word2]. If word2 is absent it is only predicted, not evaluated")
+  parser.add_argument("--infile", "-i", type=argparse.FileType('r'), default=sys.stdin, help="evaluation instruction of the form word1 lang1 word2 lang2 ... wordn langn.")
   parser.add_argument("--modelfiles", "-m", nargs='+', default=[], help="all models input files")
-  parser.add_argument("--outfile", "-o", nargs='?', type=argparse.FileType('w'), default=sys.stdout, help="results file of the form word1 lang1 lang2 word2 [pos wordlist], where the first three fields are identical to eval and the last field is the 1-best prediction. If truth is known, ordinal position of correct answer (-1 if not found) followed by the n-best list in order")
-  parser.add_argument("--nbest", "-n", type=int, default=10, help="nbest neighbors generated for purposes of evaluation")
+  parser.add_argument("--outfile", "-o", nargs='?', type=argparse.FileType('w'), default=sys.stdout, help="for each model, for each pairwise language, the l2norm")
   parser.add_argument("--pickle", "-p", action='store_true', default=False, help="dictionaries are pickled with pickle_vocab")
-  parser.add_argument("--hidewords", action='store_true', default=False, help="don't actually print nbest words")
-
 
   try:
     args = parser.parse_args()
@@ -94,39 +91,43 @@ def main():
     targets[l] = kdt(normalize(np.array(targets[l]), axis=1, norm='l2'))
   print("loaded vocabularies")
 
-  for line in infile:
-    inst = line.strip().split()
-    inword = inst[0]
-    inlang = inst[1]
-    outlang = inst[2]
-    outword = inst[3] if len(inst) > 3 else None
-    if inword not in vocab[inlang]:
-      sys.stderr.write("Warning: Couldn't find %s -> %s\n" % (inlang, inword))
-      continue
-    report = inst[:4]
-    invec = np.matrix(vocab[inlang][inword])
-    for smat, tmat in zip(inmats[inlang], outmats[outlang]):
-      xform = np.asarray(invec*smat*tmat)[0]
-      neighbors = []
-      cosines, cands = targets[outlang].query(xform, args.nbest)
-      for cos, cand in zip(cosines, cands):
-        neighbors.append((cos, targetvoc[outlang][cand]))
-      nb_words = [x[1] for x in neighbors]
-      xbest=str(cosine(xform, vocab[outlang][nb_words[0]]))
-      if outword is not None:
-        truth=vocab[outlang][outword]
-        xtruth=str(cosine(xform, truth))
-        truthbest=str(cosine(truth, vocab[outlang][nb_words[0]]))
-        rank = nb_words.index(outword) if outword in nb_words else -1
-        report.append(str(rank))
-        report.extend([xtruth, xbest, truthbest])
-      else:
-        report.append(xbest)
-      if not args.hidewords:
-        report.extend(nb_words)
-    outfile.write('\t'.join(report)+"\n")
-  # TODO: some overall stats to stderr?
 
+  data = dd(list)
+  langmap = {}
+  for line in infile:
+    linedata = line.strip().split()
+    for dset, (word, lang) in enumerate(zip(linedata[::2], linedata[1::2])):
+      if word not in vocab[lang]:
+        sys.stderr.write("Warning: Couldn't find %s -> %s\n" % (lang, word))
+        continue
+      if dset not in langmap:
+        langmap[dset]=lang
+      elif langmap[dset] != lang:
+        sys.stderr.write("Language collision at %d: %s vs %s\n" % (dset, lang, landmap[dset]))
+        sys.exit(1)
+      data[dset].append(vocab[lang][word])
+  for lang in langmap:
+    data[lang] = np.matrix(data[lang])
+  langs = len(langmap.keys())
+  for m, mfile in enumerate(args.modelfiles):
+    for d1 in range(langs):
+      l1 = langmap[d1]
+      d1xform = data[d1]*inmats[l1][m]
+      for d2 in range(d1+1, langs):
+        l2 = langmap[d2]
+        if l2 in inmats:
+          # i-i calculation
+          d2xform = data[d2]*inmats[l2][m]
+          delta = d1xform-d2xform
+          delnorm = LA.norm(delta, ord=2)
+          l2n2 = delnorm*delnorm
+          outfile.write("%s\tii\t%s\t%s\t%f\n" % (mfile, l1, l2, l2n2))
+        if l2 in outmats:
+          xform = d1xform*outmats[l2][m]
+          delta = xform-data[d2]
+          delnorm = LA.norm(delta, ord=2)
+          l2n2 = delnorm*delnorm
+          outfile.write("%s\tio\t%s\t%s\t%f\n" % (mfile, l1, l2, l2n2))
 if __name__ == '__main__':
   main()
 

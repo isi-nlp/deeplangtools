@@ -173,6 +173,7 @@ def main():
     np.random.shuffle(data)
     batchtimes = []
     itstart = time.time()
+    print("Iteration "+str(iteration))
     for batchnum in range(batchcount):
       batchstart = time.time()
       rowstart=batchnum*minibatch
@@ -241,7 +242,9 @@ def main():
   for l in list(langdims.keys()):
     matsasdict['%s_in' % l]=inmats[l]
     matsasdict['%s_out' % l]=outmats[l]
+  print("Saving final models to "+str(args.modelfile))
   np.savez_compressed(args.modelfile, **matsasdict)
+  print("Done saving final models")
 
 def getl2n2(devdata, inmats, outmats):
   l2n2=0.0

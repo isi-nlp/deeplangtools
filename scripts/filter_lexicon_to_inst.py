@@ -19,6 +19,7 @@ def main():
   parser.add_argument("--targetlang", "-t", default="eng", help="target language")
   parser.add_argument("--includeident", "-I", action='store_true', default=False, help="allow identity mappings to be included")
   parser.add_argument("--outfile", "-o", nargs='?', type=argparse.FileType('w'), default=sys.stdout, help="output instruction file")
+  parser.add_argument("--nosplit", "-n", action='store_true', default=False, help="don't split target on commas/semicolons")
 
 
 
@@ -61,7 +62,8 @@ def main():
       oov+=1
       continue
     # get rid of parentheticals and split on commas or semicolons
-    trgs = re.split(r'[;,]', re.sub(r'\([^\(\)]+\)', '', trgs.lower()))
+    trgs = re.sub(r'\([^\(\)]+\)', '', trgs.lower())
+    trgs = [trgs, ] if args.nosplit else re.split(r'[;,]', trgs)
     for trg in trgs:
       trg = trg.strip()
       # no multiwords or empties
