@@ -114,7 +114,7 @@ def main():
     outlang = inst[2]
     outword = inst[3] if len(inst) > 3 else None
     if inword not in vocab[inlang]:
-      sys.stderr.write("Warning: Couldn't find %s -> %s\n" % (inlang, inword))
+#      sys.stderr.write("Warning: Couldn't find %s -> %s\n" % (inlang, inword))
       continue
     invec = np.matrix(vocab[inlang][inword])
     xform = np.asarray(invec*mat)[0]
